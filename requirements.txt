@@ -1,0 +1,10 @@
+pandas==1.4.0
+numpy==1.22.1
+seaborn==0.11.2
+matplotlib==3.2.2
+holidays==0.10.5.2
+tqdm==4.62.3
+lightgbm==2.2.3
+scikit-learn==1.0.2
+pyyaml==5.4.1
+dill==0.3.4
