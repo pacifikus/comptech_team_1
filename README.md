@@ -35,7 +35,7 @@
 
 **Выбранный подход**: собственная модель из нескольких базовых моделей LightGBM (по одной на каждый день).
 
-**Метрика** -MAPE (Mean absolute percentage error)
+**Метрика**: MAPE (Mean absolute percentage error)
 
 ### Запуск пайплайна предсказания
 
