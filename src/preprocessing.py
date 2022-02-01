@@ -15,8 +15,8 @@ config = read_config(config_path)
 tqdm.pandas()
 
 
-def get_orders():
-    return pd.read_csv(config['preprocessing']['orders_path'], parse_dates=['date'])
+def get_orders(data_path=config['preprocessing']['orders_path']):
+    return pd.read_csv(data_path, parse_dates=['date'])
 
 
 def get_dayoffs():
@@ -35,9 +35,6 @@ def get_holidays():
 def split_date_time(data):
     logging.info('Getting date features')
     data['dttm'] = pd.to_datetime(data['dttm'])
-    data['year'] = data['dttm'].dt.year
-    data['month'] = data['dttm'].dt.month
-    data['week'] = data['dttm'].dt.week
     data['dayofweek'] = data['dttm'].dt.dayofweek
     data['doy'] = data['dttm'].dt.dayofyear
     return data
@@ -51,24 +48,24 @@ def group_by_date(data):
 
 def get_prev_next_features(data):
     logging.info('Getting base features from past and future')
-    data = data.sort_values(by=['delivery_area_id', 'date'])
+    data = data.sort_values(by=['delivery_area_id', 'date']).reset_index(drop=True)
 
     for i in range(1, config['preprocessing']['prev_cols_cnt'] + 1):
-        data['prev_' + str(i)] = data.groupby(['delivery_area_id', 'date'], as_index=False) \
-            .mean().shift(i).rolling(1).sum()['orders_cnt']
+        data['prev_' + str(i)] = data.groupby(['delivery_area_id'])["orders_cnt"]\
+            .shift(i).rolling(1).sum()
 
     data["future_1"] = data['orders_cnt'].copy()
     for i in range(2, config['preprocessing']['next_cols_cnt'] + 1):
-        data["future_" + str(i)] = data.groupby(['delivery_area_id', 'date'], as_index=False) \
-            .mean().shift(-i + 1).rolling(1).mean()['orders_cnt']
+        data["future_" + str(i)] = data.groupby(['delivery_area_id'])['orders_cnt']\
+            .shift(-i+1).rolling(1).mean()
     return data
 
 
 def get_holidays_features(data, df_holidays, dayoffs):
     logging.info('Getting holidays features')
-    data['is_holiday'] = data.progress_apply(lambda x: x['date'] in df_holidays['ds'].values, axis=1)
-    data['is_dayoff'] = data.progress_apply(lambda x: x['date'] in dayoffs, axis=1)
-    data['is_weekend'] = data.progress_apply(lambda x: x['dayofweek'] in [5, 6], axis=1)
+    data['is_holiday'] = data['date'].isin(df_holidays['ds'].values)
+    data['is_dayoff'] = data['date'].isin(dayoffs)
+    data['is_weekend'] = data['dayofweek'].isin({5, 6})
     return data
 
 
@@ -109,6 +106,9 @@ def get_days_to_holidays(data, celebrations, df_holidays):
 
 def norm_by_1_week_median(data):
     logging.info('Normalize by median')
+    prev_cols = ["prev_" + str(i) for i in range(1, config['preprocessing']['prev_cols_cnt'] + 1)][:7]
+    data['1_week_median_all'] = data[prev_cols].median(1)
+
     cols_to_norm = ["prev_" + str(i) for i in range(1, config['preprocessing']['prev_cols_cnt'] + 1)] + \
                    ["future_" + str(i) for i in range(1, config['preprocessing']['next_cols_cnt'] + 1)]
     for col in cols_to_norm:
@@ -147,42 +147,28 @@ def get_statistics(data):
     return data
 
 
-def get_features_for_chunk(data, df_holidays, dayoffs, celebrations):
-    prev_cols = ["prev_" + str(i) for i in range(1, config['preprocessing']['prev_cols_cnt'] + 1)][:7]
-
-    data = get_holidays_features(data, df_holidays, dayoffs)
-    data = get_days_to_holidays(data, celebrations, df_holidays)
-    data['1_week_median_all'] = data[prev_cols].median(1)
-    data = norm_by_1_week_median(data)
-    data = get_statistics(data)
-
-    return data
-
-
 def preprocess_orders(is_training=True):
     logging.info('Getting initial data')
-    df_holidays = get_holidays()
-    dayoffs = get_dayoffs()
-    celebrations = get_celebrations()
-    orders = get_orders()
-
-    X_test_data = orders[orders['date'] > pd.to_datetime(config['preprocessing']['date_test_split'])]
-    orders = group_by_date(orders)
-    orders['dttm'] = orders['date']
-    orders = split_date_time(orders)
-    orders = get_prev_next_features(orders)
-
-    logging.info('Data split generation')
-    X_train, X_test = get_test_data(orders)
-    X_train, X_val = timeseries_train_test_split(X_train, test_size=config['preprocessing']['test_size'])
-
     if is_training:
-        logging.info('Getting features for all splits')
-        X_train = get_features_for_chunk(X_train, df_holidays, dayoffs, celebrations)
-        X_val = get_features_for_chunk(X_val, df_holidays, dayoffs, celebrations)
-        X_test = get_features_for_chunk(X_test, df_holidays, dayoffs, celebrations)
+        df_holidays = get_holidays()
+        dayoffs = get_dayoffs()
+        celebrations = get_celebrations()
+
+        orders = get_orders()
+        orders = group_by_date(orders)
+        orders['dttm'] = orders['date']
+        orders = split_date_time(orders)
+        orders = get_prev_next_features(orders)
+        orders = get_holidays_features(orders, df_holidays, dayoffs)
+        orders = get_days_to_holidays(orders, celebrations, df_holidays)
+        orders = norm_by_1_week_median(orders)
+        orders = get_statistics(orders)
+
+        logging.info('Data split generation')
+        X_train, X_test = get_test_data(orders)
+        X_train, X_val = timeseries_train_test_split(X_train, test_size=config['preprocessing']['test_size'])
         save_all_dfs(X_train, X_val, X_test, name_suffix='preprocessed')
         return X_train, X_val, X_test
     else:
-        logging.info('Getting features for the test split')
-        return get_features_for_chunk(X_test, df_holidays, dayoffs, celebrations), X_test_data
+        X_test = pd.read_csv('data/X_test_preprocessed.csv')
+        return X_test
