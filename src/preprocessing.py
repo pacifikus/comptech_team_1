@@ -148,8 +148,8 @@ def get_statistics(data):
 
 
 def preprocess_orders(is_training=True):
-    logging.info('Getting initial data')
     if is_training:
+        logging.info('Getting initial data')
         df_holidays = get_holidays()
         dayoffs = get_dayoffs()
         celebrations = get_celebrations()
