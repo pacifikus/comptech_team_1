@@ -1,10 +1,17 @@
-import warnings
 import argparse
+import os
+import warnings
+
+import numpy as np
 
 from src.inference import predict_on_chunk, get_hours_distribution
-from src.preprocessing import preprocess_orders, get_orders
+from src.preprocessing import preprocess_orders
+from src.utils import read_config
 
 warnings.simplefilter('ignore')
+
+config_path = os.path.join(os.path.dirname(__file__), 'config/config.yaml')
+config = read_config(config_path)
 
 
 def get_predictions(date):
@@ -26,4 +33,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     result = get_predictions(args.date)
-    result.to_csv(f'hours_distribution_from_{args.date}.csv', index=False)
+    result.to_csv(f'orders_by_hours_from_{args.date}.csv', index=False)
+    result = (result * config['courier_per_order']).apply(np.ceil)
+    result.to_csv(f'couriers_by_hours_from_{args.date}.csv', index=False)
