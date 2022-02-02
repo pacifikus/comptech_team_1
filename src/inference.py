@@ -12,6 +12,14 @@ config = read_config(config_path)
 
 
 def predict_on_chunk(data, print_mape=False):
+    """Predict orders count for each day from the current day.
+
+    Args:
+        data (DataFrame): precomputed features for the current day.
+        print_mape (boolean): flag to calculate MAPE metric if needed. Defaults to False.
+    Returns:
+        Dataframe with prediction.
+    """
     if print_mape:
         data = data.dropna()
         res = model.predict(data)
@@ -32,6 +40,13 @@ def predict_on_chunk(data, print_mape=False):
 
 
 def get_hours_distribution(predictions):
+    """Compute orders distribution by hours for each day.
+
+    Args:
+        predictions (DataFrame): precomputed orders count distribution for each day.
+    Returns:
+        Dataframe with computed hours distribution.
+    """
     percentage_distribution = config['percentage_by_hours']
     hours = [item for item in list(percentage_distribution.keys())]
     result = []
