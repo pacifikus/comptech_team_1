@@ -15,6 +15,13 @@ config = read_config(config_path)
 
 
 def get_predictions(date):
+    """Predict hours distribution for a week from the current day.
+
+    Args:
+        date (str): date to predict from.
+    Returns:
+        Dataframe with computed hours distribution.
+    """
     test_features = preprocess_orders(is_training=False)
     predictions = predict_on_chunk(test_features)
     hours_distribution = get_hours_distribution(predictions[predictions['date'] == date])
@@ -28,7 +35,7 @@ if __name__ == '__main__':
         dest="date",
         type=str,
         default='2021-11-18',
-        help="Current date to prediction from"
+        help="Current date to predict from"
     )
 
     args = parser.parse_args()
