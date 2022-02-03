@@ -4,6 +4,8 @@ import pickle
 import pandas as pd
 import yaml
 
+from src.lgbm_model import LGBMWeekModelTopFeatures
+
 
 class CustomUnpickler(pickle.Unpickler):
     """Custom class to unpickle complicated objects"""
