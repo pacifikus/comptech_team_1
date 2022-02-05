@@ -6,6 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.utils import read_config, get_test_data, timeseries_train_test_split, save_all_dfs
+from src.bootstrap import get_bootstrap_ci
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -14,24 +15,42 @@ config = read_config(config_path)
 tqdm.pandas()
 
 
-def get_orders(data_path=config['preprocessing']['orders_path']):
-    """Get predefined dayoffs dates from config.
+def get_source_data(data_path, date_col='date'):
+    """Get source data from .csv file.
 
     Args:
         data_path (str): path to source data. Defaults path stored in config file.
+        date_col (str): name of the date column.
     Returns:
-        DateaFrame with orders information.
+        DataFrame with orders information.
     """
-    return pd.read_csv(data_path, parse_dates=['date'])
+    return pd.read_csv(data_path, parse_dates=[date_col])
 
 
 def get_dayoffs():
-    """Get predefined dayoffs dates from config.
+    """Get predefined dayoffs dates from .txt file. Filepath is stored in config.
 
     Returns:
         List with dayoffs dates.
     """
-    return [pd.to_datetime(day) for day in config['preprocessing']['dayoffs']]
+    with open(config['data']['dayoffs_path']) as f:
+        dayoffs = f.read().split(',')
+    return [pd.to_datetime(day) for day in dayoffs]
+
+
+def get_celebrations():
+    """Get predefined celebrations dates from .txt file.Filepath is stored in config.
+
+    Returns:
+        DataFrame with celebrations dates.
+    """
+    with open(config['data']['celebrations_path']) as f:
+        celebrations = f.read().split(',')
+
+    celebrations = pd.DataFrame(celebrations, columns=['date'])
+    celebrations['date'] = pd.to_datetime(celebrations['date'])
+    celebrations['doy'] = celebrations['date'].dt.dayofyear
+    return celebrations
 
 
 def get_holidays():
@@ -113,21 +132,6 @@ def get_holidays_features(data, df_holidays, dayoffs):
     data['is_dayoff'] = data['date'].isin(dayoffs)
     data['is_weekend'] = data['dayofweek'].isin({5, 6})
     return data
-
-
-def get_celebrations():
-    """Get predefined celebrations dates from config.
-
-    Returns:
-        DataFrame with celebrations dates.
-    """
-    celebrations = pd.DataFrame(
-        config['preprocessing']['celebrations'],
-        columns=['date']
-    )
-    celebrations['date'] = pd.to_datetime(celebrations['date'])
-    celebrations['doy'] = celebrations['date'].dt.dayofyear
-    return celebrations
 
 
 def get_days_before_nearest_day(row, calendar):
@@ -257,36 +261,95 @@ def get_statistics(data):
     return data
 
 
-def preprocess_orders(is_training=True):
+def extract_features(orders):
+    """Run features extraction from a given data.
+
+    Args:
+        orders (pd.DataFrame): data to extract features.
+    Returns:
+        Set of features from the data.
+    """
+    logging.info('Start features extraction')
+    df_holidays = get_holidays()
+    dayoffs = get_dayoffs()
+    celebrations = get_celebrations()
+
+    orders = group_by_date(orders)
+    orders['dttm'] = orders['date']
+    orders = split_date_time(orders)
+    orders = get_prev_next_features(orders)
+    orders = get_holidays_features(orders, df_holidays, dayoffs)
+    orders = get_days_to_holidays(orders, celebrations, df_holidays)
+    orders = norm_by_1_week_median(orders)
+    orders = get_statistics(orders)
+    return orders
+
+
+def compute_percentage_by_hours(orders):
+    """Orders distribution by hours in percentage.
+
+    Args:
+        orders (pd.DataFrame): orders data.
+    Returns:
+        Dictionary with percentage of orders for the each hour.
+    """
+    orders['hour'] = orders['date'].dt.hour
+    orders = orders[~orders['hour'].isin([7, 8, 9, 21, 22, 23])]
+    grouped_by_hour = orders.groupby('hour').mean()['orders_cnt']
+    grouped_by_hour = grouped_by_hour.apply(lambda x: 100 * x / float(grouped_by_hour.sum()))
+    return grouped_by_hour.to_dict()
+
+
+def compute_delay_median(delays, orders):
+    """Run features extraction from a given data.
+
+    Args:
+        delays (pd.DataFrame): delays data.
+        orders (pd.DataFrame): orders data.
+    Returns:
+        Median courier per order value optimizing delay.
+    """
+    logging.info('Compute courier median')
+    delays.columns = ['delivery_area_id', 'date', 'partners_cnt', 'delay_rate']
+    df = pd.merge(orders, delays, on=['date', 'delivery_area_id'], how='inner')
+    df['order_p_partner'] = df['orders_cnt'] / df['partners_cnt']
+    delay_threshold = config['delay_threshold']
+    _, median = get_bootstrap_ci(df[df['delay_rate'] < delay_threshold]['order_p_partner'])
+    return round(median, 3)
+
+
+def preprocess_orders(orders_path, delays_path, date, is_training=True):
     """Run preprocessing pipeline for the data.
 
     Args:
+        orders_path (str): path to file with orders data.
+        delays_path (str): path to file with delays data.
+        date (pd.DateTime): date to predict from.
         is_training (boolean): flag of training mode. If True, returns train, valid, test splits.
         If False, returns test split only. Defaults to False.
     Returns:
         Splits of dataset depending on the mode.
     """
-    if is_training:
-        logging.info('Getting initial data')
-        df_holidays = get_holidays()
-        dayoffs = get_dayoffs()
-        celebrations = get_celebrations()
+    logging.info('Getting initial data')
+    orders = get_source_data(orders_path)
+    orders['date'] = pd.to_datetime(orders['date'])
 
-        orders = get_orders()
-        orders = group_by_date(orders)
-        orders['dttm'] = orders['date']
-        orders = split_date_time(orders)
-        orders = get_prev_next_features(orders)
-        orders = get_holidays_features(orders, df_holidays, dayoffs)
-        orders = get_days_to_holidays(orders, celebrations, df_holidays)
-        orders = norm_by_1_week_median(orders)
-        orders = get_statistics(orders)
+    if not is_training:
+        cut_date = date - pd.DateOffset(days=config['days_to_feature_calc'] + 1)
+        orders = orders[orders['date'] >= cut_date]
+        orders = orders[orders['date'] <= date + pd.DateOffset(days=1)]
 
-        logging.info('Data split generation')
-        X_train, X_test = get_test_data(orders)
-        X_train, X_val = timeseries_train_test_split(X_train, test_size=config['preprocessing']['test_size'])
-        save_all_dfs(X_train, X_val, X_test, name_suffix='preprocessed')
-        return X_train, X_val, X_test
-    else:
-        X_test = pd.read_csv('data/X_test_preprocessed.csv')
-        return X_test
+        delays = get_source_data(delays_path, 'dttm')
+        delay_median = compute_delay_median(delays, orders)
+
+        percentages = compute_percentage_by_hours(orders)
+        orders = extract_features(orders)
+        orders = orders[orders['date'] == date]
+        return orders, percentages, delay_median
+
+    orders = extract_features(orders)
+    logging.info('Data split generation')
+    X_train, X_test = get_test_data(orders)
+    X_train, X_val = timeseries_train_test_split(X_train, test_size=config['preprocessing']['test_size'])
+    save_all_dfs(X_train, X_val, X_test, name_suffix='preprocessed')
+    return X_train, X_val, X_test
