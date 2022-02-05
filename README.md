@@ -9,20 +9,23 @@
 |       ├── X_test_preprocessed.csv -- Тестовые данные после нормализации
 |       ├── X_train_preprocessed.csv -- Тренировочные данные после нормализации
 |       ├── X_val_preprocessed.csv -- Валидационные данные после нормализации
-|       ├── calendar_2021.json -- Нерабочие и праздничные дни 2021 
+|       ├── celebrations.txt -- Даты неофициальных праздников
+|       ├── dayoffs.txt -- Даты нерабочих дней
 |       ├── orders.csv -- Исходные данные о количестве заказов
 |       ├── partners_delays.csv -- Исходные данные об опозданиях курьеров
 |    ├── models
 |       └── lgbm_model_1.pkl -- Сериализованная обученная модель
 |    ├── notebooks
-|       ├── Task2_StatisticalApproach.ipynb -- Статистический подход к оптимальному распределению курьеров (task 2)
+|       ├── comptech_linprog.ipynb -- Расчет рабочих смен (task 3)
+|       ├── comptech_task2_statistical_approach.ipynb -- Статистический подход к оптимальному распределению курьеров (task 2)
 |       ├── comptech_prophet.ipynb -- Эксперименты с моделью Prophet (task 1)
 |       ├── test_scripts.ipynb -- Тесты для функций извлечения признаков
 |       └── сomptech_lgbm.ipynb -- Эксперименты с моделями LightGBM (task 1)
 |    ├── src
-|       ├── eda_scripts.py -- Функции для извлечения признаков
+|       ├── bootstrap.py -- Получение медианы количества курьеров на один заказ
 |       ├── inference.py -- Функции для предсказания
 |       ├── lgbm_model.py -- Класс модели
+|       ├── linprog.py -- Расчет рабочих смен симплекс методом
 |       ├── preprocessing.py -- Функции для предобработки данных
 |       └── utils.py -- Вспомогательные функции
 |    ├── start.py -- Скрипт для запуска пайплайна инференса
